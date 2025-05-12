@@ -526,9 +526,8 @@ with tab2:
 
 with tab3:
     st.header("📊 시뮬레이션(Beta)")
-    st.write("직업과 장비를 세부적으로 설정하면 딥러닝 모델을 통해 유사한 고레벨 유저를 추천합니다.")
-    st.write("장비 세트는 파프니르, 앱솔랩스, 도전자를 선택할 수 있습니다.")
-    
+    st.write("장비 세팅을 입력하면, 딥러닝 모델을 통해 유사한 고레벨 유저를 추천합니다.")
+
     # ------------------------------
     # 모델 정의 (Deepsets 구조)
     class DeepMaskedModel(nn.Module):
@@ -565,10 +564,6 @@ with tab3:
     # ------------------------------
     # 장비 인코딩 함수 (연속형 19차원 벡터만 추출)
     def encode_item_to_cont_vector(item):
-        option_map = {'레전드리': 3, '유니크': 2, '에픽': 1, '레어': 0}
-        grade_map = {'S': 3, 'A': 2, 'B': 1, '기타': 0}
-        item_group_map = {'파프니르': 0, '앱솔랩스': 1, '도전자': 2}
-
         vec = [
             item['boss_dmg'], item['ignore_def'], item['all_stat_total'], item['damage'],
             0, 0, item['all_stat_total'], item['starforce'], 0,
@@ -611,15 +606,22 @@ with tab3:
         with open("streamlit/subclass_profiles.pkl", "rb") as f:
             return pickle.load(f)
 
+    @st.cache_data
+    def load_user_job_map():
+        df_stat = pd.read_csv("streamlit/stat_merged.csv")
+        df_stat = df_stat[['nickname', 'subclass']].drop_duplicates()
+        return dict(zip(df_stat['nickname'], df_stat['subclass']))
+
     model = load_model()
     hl_vecs, hl_nicks = load_high_level_user_vectors()
     job_avg_vectors = load_job_avg_vectors()
+    user_job_map = load_user_job_map()
 
     # ------------------------------
     # 사용자 입력 받기
     job_list = sorted(job_avg_vectors.keys())
-    user_job = st.selectbox("직업을 선택하세요", job_list)
-    top_slots = st.multiselect("장비 부위를 선택하세요", ['무기', '모자', '장갑', '신발', '망토', '상의', '하의'], default=['무기', '모자', '장갑'])
+    user_job = st.selectbox("직업을 선택하세요:", job_list)
+    top_slots = st.multiselect("장비 부위를 선택하세요:", ['무기', '모자', '장갑', '신발', '망토', '상의', '하의'], default=['무기', '모자', '장갑'])
 
     user_input = {}
     for part in top_slots:
@@ -639,27 +641,39 @@ with tab3:
             item['boss_dmg'] = st.slider(f"{part} - 보스 데미지 총합", 0.0, 100.0, 30.0, key=part+"bd")
             item['ignore_def'] = st.slider(f"{part} - 방무 총합", 0.0, 100.0, 20.0, key=part+"id")
             item['damage'] = st.slider(f"{part} - 데미지 총합", 0.0, 100.0, 25.0, key=part+"dg")
-            item['item_count'] = 1  # 각 아이템 1개로 가정
+            item['item_count'] = 1
             user_input[part] = item
 
     # ------------------------------
-    # --- 유사 유저 추천 처리 ---
+    # 유사 유저 추천
     if st.button("🔍 유사 유저 추천"):
         cont_vecs = [encode_item_to_cont_vector(user_input[part]) for part in top_slots]
         avg_vec = np.mean(cont_vecs, axis=0)
 
-        x_cont = torch.tensor(avg_vec, dtype=torch.float32).unsqueeze(0).unsqueeze(0)  # [1, 1, 19]
+        x_cont = torch.tensor(avg_vec, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         x_cat = torch.zeros((1, 1, len(embedding_info)), dtype=torch.long)
         mask = torch.tensor([[1.0]])
 
         with torch.no_grad():
             user_vec = model(x_cat, x_cont, mask).cpu().numpy().reshape(1, -1)
-            similarities = cosine_similarity(user_vec, hl_vecs)[0]
+
+        # 선택된 subclass에 해당하는 유저만 필터링
+        subclass_filtered_idx = [
+            i for i, nick in enumerate(hl_nicks)
+            if user_job_map.get(nick) == user_job
+        ]
+        filtered_vecs = hl_vecs[subclass_filtered_idx]
+        filtered_nicks = hl_nicks[subclass_filtered_idx]
+
+        if len(filtered_vecs) == 0:
+            st.warning("해당 직업의 추천 유저가 존재하지 않습니다.")
+        else:
+            similarities = cosine_similarity(user_vec, filtered_vecs)[0]
             top5_idx = np.argsort(similarities)[::-1][:5]
 
-        st.subheader("추천 유사 유저 Top5")
-        for idx in top5_idx:
-            st.write(f"{hl_nicks[idx]} (유사도: {similarities[idx]:.3f})")
+            st.subheader("추천 유사 유저 Top5")
+            for idx in top5_idx:
+                st.write(f"{filtered_nicks[idx]} (유사도: {similarities[idx]:.3f})")
 
 # -------------------- 푸터 --------------------
 
