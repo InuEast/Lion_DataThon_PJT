@@ -392,7 +392,7 @@ with tab1:
 
                 # selectbox로 프리셋을 선택
                 preset_names = {
-                    0: "0",
+                    0: "현재 적용 중인 프리셋",
                     1: "1",
                     2: "2",
                     3: "3"
@@ -620,8 +620,8 @@ with tab3:
     # ------------------------------
     # 사용자 입력 받기
     job_list = sorted(job_avg_vectors.keys())
-    user_job = st.selectbox("직업을 선택하세요:", job_list)
-    top_slots = st.multiselect("장비 부위를 선택하세요:", ['무기', '모자', '장갑', '신발', '망토', '상의', '하의'], default=['무기', '모자', '장갑'])
+    user_job = st.selectbox("직업을 선택하세요", job_list)
+    top_slots = st.multiselect("장비 부위를 선택하세요", ['무기', '모자', '장갑', '신발', '망토', '상의', '하의'], default=['무기', '모자', '장갑'])
 
     user_input = {}
     for part in top_slots:
